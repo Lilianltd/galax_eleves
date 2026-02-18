@@ -24,28 +24,25 @@ void Model_CPU_fast::step()
         {
             for (int j = 0; j < n_particles; j++)
             {
-                if(i != j)
+                const float diffx = particles.x[j] - particles.x[i];
+                const float diffy = particles.y[j] - particles.y[i];
+                const float diffz = particles.z[j] - particles.z[i];
+
+                float dij = diffx * diffx + diffy * diffy + diffz * diffz;
+
+                if (dij < 1.0)
                 {
-                    const float diffx = particles.x[j] - particles.x[i];
-                    const float diffy = particles.y[j] - particles.y[i];
-                    const float diffz = particles.z[j] - particles.z[i];
-
-                    float dij = diffx * diffx + diffy * diffy + diffz * diffz;
-
-                    if (dij < 1.0)
-                    {
-                        dij = 10.0;
-                    }
-                    else
-                    {
-                        dij = std::sqrt(dij);
-                        dij = 10.0 / (dij * dij * dij);
-                    }
-
-                    accelerationsx[i] += diffx * dij * initstate.masses[j];
-                    accelerationsy[i] += diffy * dij * initstate.masses[j];
-                    accelerationsz[i] += diffz * dij * initstate.masses[j];
+                    dij = 10.0;
                 }
+                else
+                {
+                    dij = std::sqrt(dij);
+                    dij = 10.0 / (dij * dij * dij);
+                }
+
+                accelerationsx[i] += diffx * dij * initstate.masses[j];
+                accelerationsy[i] += diffy * dij * initstate.masses[j];
+                accelerationsz[i] += diffz * dij * initstate.masses[j];
             }
         }
         #pragma omp parallel for
