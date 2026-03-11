@@ -42,7 +42,6 @@ void Model_CPU_fast::step()
             auto pj_x = xs::load_unaligned(&particles.x[j]);
             auto pj_y = xs::load_unaligned(&particles.y[j]);
             auto pj_z = xs::load_unaligned(&particles.z[j]);
-            auto m_j  = xs::load_unaligned(&initstate.masses[j]);
 
             // Calculate distance vector (pj - pi)
             auto dx = pj_x - pi_x;
@@ -57,13 +56,14 @@ void Model_CPU_fast::step()
             auto mask = r2 < 1.0f;
 
             // Calculate "else" branch
-            auto r = xs::sqrt(r2);
-            auto val_far = 10.0f / (r * r2); // 10.0 / r^3
+            auto r = xs::rsqrt(r2);
+            auto val_far = 10.0f * r * r * r;
             
             // Select value based on mask
             // If i == j, r2 is 0. Mask is true. factor becomes 10.0
             // Force contribution = dx * 10.0 idem for dy, dz. Since dx,dy,dz is 0, force is 0
             auto factor = xs::select(mask, batch_array(10.0f), val_far);
+            auto m_j  = xs::load_unaligned(&initstate.masses[j]);
             factor *= m_j;
 
             //No concurrent access it's safe there as only one thread for each i and sum over j
