@@ -64,7 +64,7 @@ Galax needs cmake and the g++ compiler to be compiled.
     cd galax_eleves
     mkdir build # create a build directory
     cd build
-    cmake  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-march=native" .. # configure project with cmake, using Release build and native arch
+    cmake  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-march=native -O3 -ffast math" .. # configure project with cmake, using Release build and native arch
     make -j # compile the project
 ```
 

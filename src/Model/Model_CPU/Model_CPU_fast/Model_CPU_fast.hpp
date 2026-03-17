@@ -8,12 +8,14 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
+#include <atomic> // Add this at the top
 
 constexpr std::size_t BLOCK_SIZE = 256; 
 
 struct BlockTask {
     std::size_t I;
     std::size_t J;
+    bool is_diagonal;
 };
 
 struct BlockResult : BlockTask {
@@ -102,8 +104,12 @@ class Model_CPU_fast : public Model_CPU
 {
 private:
     std::unique_ptr<ParallelScheduler> scheduler;
+    std::atomic<long long> total_worker_compute_time{0};
     
-    BlockResult compute_block(const BlockTask& task);
+    // Replace compute_block with these two:
+    BlockResult compute_block_off_diagonal(const BlockTask& task);
+    BlockResult compute_block_diagonal(const BlockTask& task);
+    
     void apply_block_result(const BlockResult& result);
 
 public:
