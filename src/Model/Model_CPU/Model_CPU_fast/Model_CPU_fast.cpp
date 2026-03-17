@@ -284,21 +284,15 @@ BlockResult Model_CPU_fast::compute_block_diagonal(const BlockTask& task) {
         res_az.store_unaligned(&result.az_I[local_i]);
     }
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    total_worker_compute_time.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count(), std::memory_order_relaxed);
     return result;
 }
 
 void Model_CPU_fast::step()
 {
-    // Start the clock!
-    LapTimer timer; 
     // --- LAP 1: Initialization ---
     std::fill(accelerationsx.begin(), accelerationsx.end(), 0.0f);
     std::fill(accelerationsy.begin(), accelerationsy.end(), 0.0f);
     std::fill(accelerationsz.begin(), accelerationsz.end(), 0.0f);
-    
-    timer.lap("Zeroing arrays");
 
     // --- LAP 2: Task Generation and Submission ---
 
@@ -315,8 +309,6 @@ void Model_CPU_fast::step()
 
     scheduler->submit_tasks(tasks);
     
-    timer.lap("Task generation & submission");
-
     // --- LAP 3: Result Processing (The heavy lifting) ---
     std::size_t tasks_completed = 0;
     std::size_t total_tasks = tasks.size();
@@ -326,41 +318,13 @@ void Model_CPU_fast::step()
 
     while (tasks_completed < total_tasks) {
         // Measure how long the main thread spends WAITING for a worker
-        auto t1 = std::chrono::high_resolution_clock::now();
         BlockResult result = scheduler->wait_and_pop_result(); 
         
-        // Measure how long the main thread spends APPLYING the data
-        auto t2 = std::chrono::high_resolution_clock::now();
         apply_block_result(result);
         
-        auto t3 = std::chrono::high_resolution_clock::now();
-
-        total_wait_time += std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-        total_apply_time += std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
-
         tasks_completed++;
     }
-
-    std::cout << "[Timer] Time spent WAITING for workers: " << total_wait_time << " us\n";
-    std::cout << "[Timer] Time spent APPLYING results: " << total_apply_time << " us\n";
-    timer.lap("Parallel computation & applying results (Total)");
     
-    // --- PRINT INTERNAL SCHEDULER STATS ---
-    long long pure_math_time = total_worker_compute_time.load();
-    
-    // Reset it for the next frame
-    total_worker_compute_time.store(0); 
-
-    std::cout << "[Scheduler Stats] Total pure math time across ALL threads: " << pure_math_time << " us\n";
-    
-    // If you have 15 worker threads, the "wall time" they spent doing math is pure_math / 15.
-    unsigned int worker_count = std::thread::hardware_concurrency() - 1;
-    long long expected_wall_time = pure_math_time / (worker_count > 0 ? worker_count : 1);
-    
-    std::cout << "[Scheduler Stats] Expected wall time (Math / Threads): ~" << expected_wall_time << " us\n";
-    std::cout << "[Scheduler Stats] Actual total step time: " << 70691 << " us\n"; // Using your number for reference
-    
-    timer.total();
     // --- LAP 4: Final Integration ---
     batch_array v_factor(2.0f);
     batch_array p_factor(0.1f);
@@ -407,8 +371,4 @@ void Model_CPU_fast::step()
         py.store_unaligned(&particles.y[i]);
         pz.store_unaligned(&particles.z[i]);
     }
-
-    timer.lap("OpenMP integration");
-    // Print the total time for the step
-    timer.total();
 }
