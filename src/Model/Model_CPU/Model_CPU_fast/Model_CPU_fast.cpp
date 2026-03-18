@@ -16,65 +16,84 @@ Model_CPU_fast
 
 void Model_CPU_fast::step()
 {
-    std::size_t simd_size = batch_array::size;    
-    #pragma omp parallel for schedule(dynamic)
-    for (std::size_t i = 0; i <= n_particles - simd_size; i += simd_size) {
+    std::size_t simd_size = batch_array::size;
+    std::size_t double_simd = 2 * simd_size;
 
-        // Load position of particles i to i+(simd_size-1)
-        auto pi_x = xs::load_unaligned(&particles.x[i]);
-        auto pi_y = xs::load_unaligned(&particles.y[i]); 
-        auto pi_z = xs::load_unaligned(&particles.z[i]); 
+    #pragma omp parallel for schedule(static)
+    for (std::size_t i = 0; i <= n_particles - double_simd; i += double_simd) {
+        auto pi_x_1 = xs::load_unaligned(&particles.x[i]);
+        auto pi_y_1 = xs::load_unaligned(&particles.y[i]); 
+        auto pi_z_1 = xs::load_unaligned(&particles.z[i]); 
         
-        batch_array ax_i_i4(0.f);
-        batch_array ay_i_i4(0.f);
-        batch_array az_i_i4(0.f);
+        batch_array ax_1(0.f), ay_1(0.f), az_1(0.f);
         
-        // Loop over ALL j particles. Step by 1.
-        for (std::size_t j = 0; j < n_particles; j++) {
-            
-            // FIX: Broadcast the single j particle properties to all SIMD lanes
-            // This creates a batch like: [x_j, x_j, x_j, x_j]
+        for (std::size_t j = 0; j < n_particles; ++j) {
             batch_array pj_x(particles.x[j]);
             batch_array pj_y(particles.y[j]);
             batch_array pj_z(particles.z[j]);
 
-            auto dx = pj_x - pi_x;
-            auto dy = pj_y - pi_y;
-            auto dz = pj_z - pi_z;
+            auto dx = pj_x - pi_x_1;
+            auto dy = pj_y - pi_y_1;
+            auto dz = pj_z - pi_z_1;
 
-            // r^2 = dx*dx + dy*dy + dz*dz
             auto r2 = xs::fma(dx, dx, xs::fma(dy, dy, dz * dz));
-
-            // Check condition: r^2 < 1.0f
             auto mask = r2 < 1.0f;
-
-            // Calculate "else" branch
-            // Note: r * r * r is faster than r^3
             auto r = xs::rsqrt(r2);
             auto val_far = 10.0f * r * r * r;
-            
             auto factor = xs::select(mask, batch_array(10.0f), val_far);
 
             batch_array m_j(initstate.masses[j]); 
             factor *= m_j;
 
-            // Accumulate accelerations
-            ax_i_i4 = xs::fma(dx, factor, ax_i_i4);
-            ay_i_i4 = xs::fma(dy, factor, ay_i_i4);
-            az_i_i4 = xs::fma(dz, factor, az_i_i4);
+            ax_1 = xs::fma(dx, factor, ax_1);
+            ay_1 = xs::fma(dy, factor, ay_1);
+            az_1 = xs::fma(dz, factor, az_1);
         }
 
-        // Store results
-        ax_i_i4.store_unaligned(&accelerationsx[i]);
-        ay_i_i4.store_unaligned(&accelerationsy[i]);
-        az_i_i4.store_unaligned(&accelerationsz[i]);
-    }
+        ax_1.store_unaligned(&accelerationsx[i]);
+        ay_1.store_unaligned(&accelerationsy[i]);
+        az_1.store_unaligned(&accelerationsz[i]);
 
+        std::size_t i_next = i + simd_size;
+        auto pi_x_2 = xs::load_unaligned(&particles.x[i_next]);
+        auto pi_y_2 = xs::load_unaligned(&particles.y[i_next]); 
+        auto pi_z_2 = xs::load_unaligned(&particles.z[i_next]); 
+        
+        batch_array ax_2(0.f), ay_2(0.f), az_2(0.f);
+        
+        for (std::size_t j = n_particles; j-- > 0; ) {
+            batch_array pj_x(particles.x[j]);
+            batch_array pj_y(particles.y[j]);
+            batch_array pj_z(particles.z[j]);
+
+            auto dx = pj_x - pi_x_2;
+            auto dy = pj_y - pi_y_2;
+            auto dz = pj_z - pi_z_2;
+
+            auto r2 = xs::fma(dx, dx, xs::fma(dy, dy, dz * dz));
+            auto mask = r2 < 1.0f;
+            auto r = xs::rsqrt(r2);
+            auto val_far = 10.0f * r * r * r;
+            auto factor = xs::select(mask, batch_array(10.0f), val_far);
+
+            batch_array m_j(initstate.masses[j]); 
+            factor *= m_j;
+
+            ax_2 = xs::fma(dx, factor, ax_2);
+            ay_2 = xs::fma(dy, factor, ay_2);
+            az_2 = xs::fma(dz, factor, az_2);
+        }
+
+        ax_2.store_unaligned(&accelerationsx[i_next]);
+        ay_2.store_unaligned(&accelerationsy[i_next]);
+        az_2.store_unaligned(&accelerationsz[i_next]);
+    }
+    
     batch_array v_factor(2.0f);
     batch_array p_factor(0.1f);
 
     std::size_t j = 0;
-    #pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < n_particles; i += simd_size) {
         // Ensure we don't read/write past bounds in the last iteration
         if (i + simd_size > n_particles) {
