@@ -1,6 +1,4 @@
-#ifdef GALAX_MODEL_CPU_FAST
 
-#ifndef MODEL_CPU_FAST_HPP_
 #define MODEL_CPU_FAST_HPP_
 
 #include "../Model_CPU.hpp"
@@ -14,6 +12,3 @@ public:
 
     virtual void step();
 };
-#endif // MODEL_CPU_FAST_HPP_
-
-#endif // GALAX_MODEL_CPU_FAST
